@@ -293,6 +293,14 @@ class Jenis_Surat_Field_Form extends Seeder
             ],
         ]);
 
-        DB::table('jenis_surat_field_form')->insert($fields);
+        foreach ($fields as $field) {
+            DB::table('jenis_surat_field_form')->updateOrInsert(
+                [
+                    'jenis_surat_id' => $field['jenis_surat_id'],
+                    'field_name' => $field['field_name'],
+                ],
+                $field
+            );
+        }
     }
 }

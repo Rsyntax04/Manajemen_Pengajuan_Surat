@@ -20,6 +20,7 @@ class DatabaseSeeder extends Seeder
             UserSeeder::class,
             Jenis_Surat::class,
             Jenis_Surat_Field_Form::class,
+            TestingDataSeeder::class,
         ]);
     }
 }
