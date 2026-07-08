@@ -9,6 +9,8 @@ use Maatwebsite\Excel\Facades\Excel;
 use App\Services\HistoryPengajuanService;
 use App\Models\SuratMaster;
 use App\Models\User;
+use Illuminate\Support\Facades\Mail;
+use App\Mail\PengajuanBaru;
 use Illuminate\Support\Facades\Storage;
 
 class UserController extends Controller
@@ -98,7 +100,6 @@ class UserController extends Controller
                 ->orderBy('urutan')
                 ->get();
         }
-
         return view('users.pengajuan', compact(
             'user',
             'jenisSurat',
@@ -257,10 +258,18 @@ class UserController extends Controller
         HistoryPengajuanService::create($suratId, auth::id(), 'Created');
 
         $surat = SuratMaster::find($suratId);
+        $jenis_surat = JenisSurat::find($surat->jenis_surat_id)->nama_jenis;
+        $pengaju = User::find($surat->user_id);
         $moUsers = User::whereHas('role', function($q) {
             $q->where('role_name', 'mo');
         })->get();
-
+        if ($moUsers) {
+            foreach ($moUsers as $mo) {
+                Mail::to("2272003@maranatha.ac.id")->send(
+                    new PengajuanBaru($pengaju->name, $jenis_surat, $mo->name)
+                );
+            }
+        }
         foreach($moUsers as $mo) {
             $mo->notify(new \App\Notifications\PengajuanBaruNotification($surat));
         }

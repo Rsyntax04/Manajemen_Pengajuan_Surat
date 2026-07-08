@@ -9,6 +9,8 @@ use App\Models\SuratMaster;
 use App\Models\JenisSurat;
 use PhpOffice\PhpWord\IOFactory;
 use App\Services\SuratGeneratorService;
+use Illuminate\Support\Facades\Mail;
+use App\Mail\StatusPengajuanMail;
 
 class MoController extends Controller
 {
@@ -88,8 +90,6 @@ class MoController extends Controller
     public function approve($id)
     {
         $data = SuratMaster::findOrFail($id);
-
-
         $data->update([
             'status' => 'approved',
             'approved_at' => now(),
@@ -106,7 +106,12 @@ class MoController extends Controller
             'file_hasil' => $filePath
         ]);
 
-        $data->user->notify(new \App\Notifications\SuratStatusNotification($data, 'Pengajuan surat Anda telah disetujui.'));
+        $jenis_surat = JenisSurat::find($data->jenis_surat_id)->nama_jenis;
+        Mail::to($data->user->email)
+        ->send(new StatusPengajuanMail(
+            $data,$jenis_surat,
+            'Pengajuan surat Anda telah disetujui.'
+        ));
 
         return redirect()
             ->route('mo.approval')
@@ -125,8 +130,13 @@ class MoController extends Controller
             'catatan_revisi' => $request->catatan_revisi
         ]);
 
-        $data->user->notify(new \App\Notifications\SuratStatusNotification($data, 'Pengajuan surat Anda ditolak. Catatan: ' . $request->catatan_revisi));
-
+        $pesan = 'Pengajuan surat Anda dikembalikan untuk revisi. Catatan: ' . $request->catatan_revisi;
+        
+        $jenis_surat = JenisSurat::find($data->jenis_surat_id)->nama_jenis;
+        Mail::to($data->user->email)
+        ->send(new StatusPengajuanMail(
+            $data,$jenis_surat,$pesan
+        ));
         return back()->with('success', 'Pengajuan ditolak');
     }
 
@@ -138,8 +148,13 @@ class MoController extends Controller
             'status' => 'revisi',
             'catatan_revisi' => $request->catatan_revisi
         ]);
+         $pesan = 'Pengajuan surat Anda ditolak. Catatan: ' . $request->catatan_revisi;
 
-        $data->user->notify(new \App\Notifications\SuratStatusNotification($data, 'Pengajuan surat Anda dikembalikan untuk revisi. Catatan: ' . $request->catatan_revisi));
+        $jenis_surat = JenisSurat::find($data->jenis_surat_id)->nama_jenis;
+        Mail::to($data->user->email)
+        ->send(new StatusPengajuanMail(
+            $data,$jenis_surat,$pesan
+        ));
 
         return back()->with('success', 'Pengajuan dikembalikan untuk revisi');
     }

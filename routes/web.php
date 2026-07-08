@@ -5,7 +5,14 @@ use App\Http\Controllers\AdminController;
 use App\Http\Controllers\ActivityLogController;
 use App\Http\Controllers\MoController;
 use App\Http\Controllers\UserController;
+Route::get('/test-email', function () {
+    Mail::raw('Ini adalah email percobaan.', function ($message) {
+        $message->to('emailtujuan@gmail.com')
+                ->subject('Test Email Laravel');
+    });
 
+    return 'Email berhasil dikirim.';
+});
 Route::get('/', [AuthController::class, 'login'])->name('login');
 
 Route::post('/login', [AuthController::class, 'authenticate'])->name('login.process');

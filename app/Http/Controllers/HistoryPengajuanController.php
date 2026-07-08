@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
+use App\Mail\StatusPengajuanMail;
 
 class HistoryPengajuanController extends Controller
 {
@@ -20,8 +22,9 @@ class HistoryPengajuanController extends Controller
     
     public function updateStatus(Request $request, $id)
     {
+         dd('aaaaaaaaaaaa');
         DB::transaction(function () use ($request, $id) {
-
+             dd('b');
             DB::table('surat_master')
                 ->where('id', $id)
                 ->update([
@@ -42,6 +45,27 @@ class HistoryPengajuanController extends Controller
                 'description' => 'Status diubah oleh MO',
                 'created_at' => now(),
             ]);
+            dd('aaaaaaaaaaaa');
+            // Ambil data mahasiswa
+            $surat = DB::table('surat_master')
+                ->join('users', 'users.id', '=', 'surat_master.user_id')
+                ->join('jenis_surats', 'jenis_surats.id', '=', 'surat_master.jenis_surat_id')
+                ->select(
+                    'surat_master.*',
+                    'users.email',
+                    'users.name as nama_mahasiswa',
+                    'jenis_surats.nama as jenis_surat'
+                )
+                ->where('surat_master.id', $id)
+                ->first();
+
+            // Kirim email
+            if ($surat && $surat->email) {
+                Mail::to($surat->email)
+                    ->send(new StatusPengajuanMail($surat));
+            }
         });
+
+        return redirect()->back()->with('success', 'Status berhasil diperbarui.');
     }
 }
