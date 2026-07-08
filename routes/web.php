@@ -93,6 +93,7 @@ Route::middleware('auth')->group(function () {
             Route::get('/user/profile', [UserController::class, 'profile'])->name('user.profile');
             Route::get('/user/profile/edit', [UserController::class, 'editProfile'])->name('user.profile.edit');
             Route::put('/user/profile/update', [UserController::class, 'updateProfile'])->name('user.profile.update');
+            Route::get('/user/pengajuan/{id}/view', [UserController::class, 'viewPdf'])->name('user.pengajuan.view');
             Route::get('/user/pengajuan/{id}/download', [UserController::class, 'downloadSurat'])->name('user.pengajuan.download');
         });
 });
