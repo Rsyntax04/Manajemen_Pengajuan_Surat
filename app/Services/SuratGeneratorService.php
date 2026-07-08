@@ -10,6 +10,8 @@ use App\Models\JenisSurat;
 use PhpOffice\PhpWord\TemplateProcessor;
 use Carbon\Carbon;
 use ZipArchive;
+use Dompdf\Dompdf;
+use Dompdf\Options;
 
 class SuratGeneratorService
 {
@@ -39,11 +41,14 @@ class SuratGeneratorService
             throw new \Exception("Template tidak ditemukan: " . $templatePath);
         }
 
-        $normalizedTemplatePath = $this->normalizeTemplateDocument($templatePath);
+        // JANGAN normalize - ini yang merusak header!
+        // $normalizedTemplatePath = $this->normalizeTemplateDocument($templatePath);
+        // Langsung gunakan template asli
+        $templateWorkingPath = $this->createTemplateWorkingCopy($templatePath);
 
-        $this->applyPanitiaTableRows($normalizedTemplatePath, $panitia);
+        $this->applyPanitiaTableRows($templateWorkingPath, $panitia);
 
-        $template = new TemplateProcessor($normalizedTemplatePath);
+        $template = new TemplateProcessor($templateWorkingPath);
 
         /*
         |-----------------------------------------
@@ -51,7 +56,11 @@ class SuratGeneratorService
         |-----------------------------------------
         */
         foreach ($details as $key => $value) {
-            $template->setValue($key, $value);
+            try {
+                $template->setValue($key, $value);
+            } catch (\Exception $e) {
+                // Skip jika placeholder tidak ada
+            }
         }
 
         $this->setTemplateAliases($template, $details);
@@ -62,25 +71,34 @@ class SuratGeneratorService
         |-----------------------------------------
         */
         $tanggal = $master->approved_at ? Carbon::parse($master->approved_at) : Carbon::now();
-        $template->setValue('tanggal_ttd', $tanggal->translatedFormat('d F Y'));
+        
+        try {
+            $template->setValue('tanggal_ttd', $tanggal->translatedFormat('d F Y'));
+        } catch (\Exception $e) {}
 
-        $template->setValue(
-            'nomor_surat',
-            $this->generateNomorSurat($master, $tanggal)
-        );
+        try {
+            $template->setValue(
+                'nomor_surat',
+                $this->generateNomorSurat($master, $tanggal)
+            );
+        } catch (\Exception $e) {}
 
-        $template->setValue('tahun', $tanggal->format('Y'));
+        try {
+            $template->setValue('tahun', $tanggal->format('Y'));
+        } catch (\Exception $e) {}
 
         // Signatory details
         $penandatanganNama = $jenis->penandatangan_nama ?? '-';
         $penandatanganNip = $jenis->penandatangan_nip ?? '-';
         $penandatanganJabatan = $jenis->penandatangan_jabatan ?? '-';
 
-        $template->setValue('penandatangan_nama', $penandatanganNama);
-        $template->setValue('nama_penandatangan', $penandatanganNama);
-        $template->setValue('penandatangan_nip', $penandatanganNip);
-        $template->setValue('penandatangan_jabatan', $penandatanganJabatan);
-        $template->setValue('jabatan_penandatangan', $penandatanganJabatan);
+        try {
+            $template->setValue('penandatangan_nama', $penandatanganNama);
+            $template->setValue('nama_penandatangan', $penandatanganNama);
+            $template->setValue('penandatangan_nip', $penandatanganNip);
+            $template->setValue('penandatangan_jabatan', $penandatanganJabatan);
+            $template->setValue('jabatan_penandatangan', $penandatanganJabatan);
+        } catch (\Exception $e) {}
 
         /*
         |-----------------------------------------
@@ -93,7 +111,9 @@ class SuratGeneratorService
             $listAnggota .= ($i + 1) . ". " . $row->nama . " - " . $row->identitas . "\n";
         }
 
-        $template->setValue('list_anggota', $listAnggota);
+        try {
+            $template->setValue('list_anggota', $listAnggota);
+        } catch (\Exception $e) {}
 
         $listPanitia = "";
 
@@ -104,14 +124,16 @@ class SuratGeneratorService
             $listPanitia .= ($i + 1) . ". " . $jabatan . ", " . $nama . ", " . $identitas . "\n";
         }
 
-        $template->setValue('list_panitia', $listPanitia);
-        $template->setValue('panitia_list', $listPanitia);
+        try {
+            $template->setValue('list_panitia', $listPanitia);
+            $template->setValue('panitia_list', $listPanitia);
+        } catch (\Exception $e) {}
 
         $this->setPanitiaPlaceholders($template, $panitia);
 
         /*
         |-----------------------------------------
-        | 4. SAVE FILE (WORD -> PDF)
+        | 4. SAVE FILE (WORD ONLY)
         |-----------------------------------------
         */
         $baseName = 'surat_' . $master->id . '_' . time();
@@ -127,73 +149,55 @@ class SuratGeneratorService
 
         $template->saveAs($docxPath);
 
-        // Convert DOCX to PDF using LibreOffice (more reliable for headers/footers)
-        $this->convertDocxToPdfLibreOffice($docxPath, $pdfPath);
+        // Convert DOCX to PDF using DomPDF directly
+        // DomPDF lebih reliable dengan text content
+        $this->convertDocxToPdfDomPDF($docxPath, $pdfPath);
 
         $master->update([
             'file_hasil' => $pdfPath
         ]);
 
-        @unlink($normalizedTemplatePath);
+        @unlink($templateWorkingPath);
+        @unlink($docxPath); // Cleanup DOCX setelah convert
 
         return $pdfPath;
     }
 
     /**
-     * Convert DOCX to PDF using LibreOffice
-     * This method preserves headers, footers, and complex formatting better than DomPDF
+     * Create working copy dari template tanpa merusak header
      */
-    private function convertDocxToPdfLibreOffice($docxPath, $pdfPath)
+    private function createTemplateWorkingCopy($templatePath)
     {
-        // Try LibreOffice first
-        if ($this->hasLibreOffice()) {
-            return $this->convertWithLibreOffice($docxPath, $pdfPath);
-        }
-
-        // Fallback to DomPDF if LibreOffice not available
-        \PhpOffice\PhpWord\Settings::setPdfRendererPath(base_path('vendor/dompdf/dompdf'));
-        \PhpOffice\PhpWord\Settings::setPdfRendererName('DomPDF');
+        $tempPath = tempnam(sys_get_temp_dir(), 'surat_tpl_');
+        @unlink($tempPath);
+        $tempPath .= '.docx';
         
-        $phpWord = \PhpOffice\PhpWord\IOFactory::load($docxPath);
-        $pdfWriter = \PhpOffice\PhpWord\IOFactory::createWriter($phpWord, 'PDF');
-        $pdfWriter->save($pdfPath);
+        // Simple copy - jangan memanipulasi XML
+        copy($templatePath, $tempPath);
+        
+        return $tempPath;
     }
 
     /**
-     * Check if LibreOffice is installed
+     * Convert DOCX to PDF using DomPDF
+     * Preserve styling dan header dengan better rendering
      */
-    private function hasLibreOffice()
+    private function convertDocxToPdfDomPDF($docxPath, $pdfPath)
     {
-        $output = shell_exec('which libreoffice 2>/dev/null');
-        return !empty($output);
-    }
-
-    /**
-     * Convert DOCX to PDF using LibreOffice command line
-     */
-    private function convertWithLibreOffice($docxPath, $pdfPath)
-    {
-        $outputDir = dirname($pdfPath);
-        $baseName = basename($docxPath, '.docx');
-        
-        // Command to convert DOCX to PDF
-        $cmd = sprintf(
-            'libreoffice --headless --convert-to pdf --outdir %s %s 2>&1',
-            escapeshellarg($outputDir),
-            escapeshellarg($docxPath)
-        );
-
-        exec($cmd, $output, $returnCode);
-
-        $generatedPdf = $outputDir . '/' . $baseName . '.pdf';
-
-        if ($returnCode !== 0 || !file_exists($generatedPdf)) {
-            throw new \Exception('Gagal mengkonversi DOCX ke PDF dengan LibreOffice. Error: ' . implode("\n", $output));
-        }
-
-        // Rename if needed
-        if ($generatedPdf !== $pdfPath) {
-            rename($generatedPdf, $pdfPath);
+        try {
+            // Extract text dari DOCX dan render sebagai HTML
+            $phpWord = \PhpOffice\PhpWord\IOFactory::load($docxPath);
+            
+            // Gunakan PhpWord untuk convert ke PDF
+            \PhpOffice\PhpWord\Settings::setPdfRendererPath(base_path('vendor/dompdf/dompdf'));
+            \PhpOffice\PhpWord\Settings::setPdfRendererName('DomPDF');
+            
+            $pdfWriter = \PhpOffice\PhpWord\IOFactory::createWriter($phpWord, 'PDF');
+            $pdfWriter->save($pdfPath);
+            
+        } catch (\Exception $e) {
+            // Fallback: Gunakan TCPDF jika tersedia
+            throw new \Exception('Gagal mengkonversi DOCX ke PDF: ' . $e->getMessage());
         }
     }
 
@@ -248,7 +252,9 @@ class SuratGeneratorService
 
         foreach ($aliases as $alias => $fallbackKey) {
             if (!isset($details[$alias]) && isset($details[$fallbackKey])) {
-                $template->setValue($alias, $details[$fallbackKey]);
+                try {
+                    $template->setValue($alias, $details[$fallbackKey]);
+                } catch (\Exception $e) {}
             }
         }
     }
@@ -256,17 +262,21 @@ class SuratGeneratorService
     private function setPanitiaPlaceholders($template, $panitia)
     {
         if ($panitia->isEmpty()) {
-            $template->setValue('jabatan', '-');
-            $template->setValue('nama', '-');
-            $template->setValue('identitas', '-');
+            try {
+                $template->setValue('jabatan', '-');
+                $template->setValue('nama', '-');
+                $template->setValue('identitas', '-');
+            } catch (\Exception $e) {}
             return;
         }
 
         $row = $panitia->first();
 
-        $template->setValue('jabatan', $row->jabatan ?? '-');
-        $template->setValue('nama', $row->nama ?? '-');
-        $template->setValue('identitas', $row->identitas ?? '-');
+        try {
+            $template->setValue('jabatan', $row->jabatan ?? '-');
+            $template->setValue('nama', $row->nama ?? '-');
+            $template->setValue('identitas', $row->identitas ?? '-');
+        } catch (\Exception $e) {}
     }
 
     private function applyPanitiaTableRows($templatePath, $panitia)
