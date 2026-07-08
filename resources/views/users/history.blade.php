@@ -165,10 +165,16 @@
                     <td class="px-6 py-4 text-center">
 
                         @if($item->status == 'approved')
-                            <a href="{{ route('user.pengajuan.download',$item->id) }}"
-                               class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition inline-block">
-                                Download
-                            </a>
+                            <div class="flex gap-2 justify-center">
+                                <a href="{{ route('user.pengajuan.view', $item->id) }}"
+                                   class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg transition inline-block text-sm">
+                                    Lihat
+                                </a>
+                                <a href="{{ route('user.pengajuan.download',$item->id) }}"
+                                   class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition inline-block text-sm">
+                                    Download
+                                </a>
+                            </div>
                         @elseif($item->status == 'pending' || $item->status == 'revisi')
                             <a href="{{ route('user.pengajuan.edit',$item->id) }}"
                                class="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded-lg transition inline-block">
