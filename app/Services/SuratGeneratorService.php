@@ -10,8 +10,6 @@ use App\Models\JenisSurat;
 use PhpOffice\PhpWord\TemplateProcessor;
 use Carbon\Carbon;
 use ZipArchive;
-use Dompdf\Dompdf;
-use Dompdf\Options;
 
 class SuratGeneratorService
 {
@@ -41,9 +39,7 @@ class SuratGeneratorService
             throw new \Exception("Template tidak ditemukan: " . $templatePath);
         }
 
-        // JANGAN normalize - ini yang merusak header!
-        // $normalizedTemplatePath = $this->normalizeTemplateDocument($templatePath);
-        // Langsung gunakan template asli
+        // Buat working copy dari template tanpa merusak struktur
         $templateWorkingPath = $this->createTemplateWorkingCopy($templatePath);
 
         $this->applyPanitiaTableRows($templateWorkingPath, $panitia);
@@ -133,7 +129,7 @@ class SuratGeneratorService
 
         /*
         |-----------------------------------------
-        | 4. SAVE FILE (WORD ONLY)
+        | 4. SAVE FILE (WORD -> PDF)
         |-----------------------------------------
         */
         $baseName = 'surat_' . $master->id . '_' . time();
@@ -149,9 +145,8 @@ class SuratGeneratorService
 
         $template->saveAs($docxPath);
 
-        // Convert DOCX to PDF using DomPDF directly
-        // DomPDF lebih reliable dengan text content
-        $this->convertDocxToPdfDomPDF($docxPath, $pdfPath);
+        // Convert DOCX ke PDF menggunakan LibreOffice (preserve 100% formatting)
+        $this->convertDocxToPdf($docxPath, $pdfPath);
 
         $master->update([
             'file_hasil' => $pdfPath
@@ -164,7 +159,7 @@ class SuratGeneratorService
     }
 
     /**
-     * Create working copy dari template tanpa merusak header
+     * Create working copy dari template tanpa merusak struktur
      */
     private function createTemplateWorkingCopy($templatePath)
     {
@@ -179,65 +174,111 @@ class SuratGeneratorService
     }
 
     /**
-     * Convert DOCX to PDF using DomPDF
-     * Preserve styling dan header dengan better rendering
+     * Convert DOCX to PDF
+     * Primary: LibreOffice (best fidelity untuk headers/footers/formatting)
+     * Fallback: DomPDF (jika LibreOffice tidak tersedia)
      */
-    private function convertDocxToPdfDomPDF($docxPath, $pdfPath)
+    private function convertDocxToPdf($docxPath, $pdfPath)
     {
-        try {
-            // Extract text dari DOCX dan render sebagai HTML
-            $phpWord = \PhpOffice\PhpWord\IOFactory::load($docxPath);
-            
-            // Gunakan PhpWord untuk convert ke PDF
-            \PhpOffice\PhpWord\Settings::setPdfRendererPath(base_path('vendor/dompdf/dompdf'));
-            \PhpOffice\PhpWord\Settings::setPdfRendererName('DomPDF');
-            
-            $pdfWriter = \PhpOffice\PhpWord\IOFactory::createWriter($phpWord, 'PDF');
-            $pdfWriter->save($pdfPath);
-            
-        } catch (\Exception $e) {
-            // Fallback: Gunakan TCPDF jika tersedia
-            throw new \Exception('Gagal mengkonversi DOCX ke PDF: ' . $e->getMessage());
+        // Try LibreOffice first
+        if ($this->hasLibreOffice()) {
+            try {
+                return $this->convertUsingLibreOffice($docxPath, $pdfPath);
+            } catch (\Exception $e) {
+                \Log::warning('LibreOffice conversion failed, falling back to DomPDF: ' . $e->getMessage());
+                // Fallback ke DomPDF
+            }
         }
+
+        // Fallback: DomPDF
+        return $this->convertUsingDomPDF($docxPath, $pdfPath);
     }
 
-    private function normalizeTemplateDocument($templatePath)
+    /**
+     * Check if LibreOffice is installed on server
+     */
+    private function hasLibreOffice()
     {
-        $tempPath = tempnam(sys_get_temp_dir(), 'surat_tpl_');
-        @unlink($tempPath);
-        $tempPath .= '.docx';
-
-        $source = new ZipArchive();
-        $target = new ZipArchive();
-
-        if ($source->open($templatePath) !== true) {
-            throw new \Exception('Gagal membuka template DOCX: ' . $templatePath);
+        $result = null;
+        $output = null;
+        
+        // Linux/Mac
+        exec('which libreoffice 2>/dev/null', $output, $result);
+        if ($result === 0 && !empty($output)) {
+            return true;
         }
 
-        if ($target->open($tempPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
-            $source->close();
-            throw new \Exception('Gagal membuat salinan template DOCX sementara.');
+        // Windows
+        exec('where soffice.exe 2>nul', $output, $result);
+        if ($result === 0 && !empty($output)) {
+            return true;
         }
 
-        for ($i = 0; $i < $source->numFiles; $i++) {
-            $name = $source->getNameIndex($i);
-            $content = $source->getFromName($name);
+        return false;
+    }
 
-            if ($content === false) {
-                continue;
+    /**
+     * Convert menggunakan LibreOffice via command line
+     * BEST OPTION: Maintain 100% fidelity dari DOCX original
+     */
+    private function convertUsingLibreOffice($docxPath, $pdfPath)
+    {
+        $outputDir = dirname($pdfPath);
+        $baseName = basename($docxPath, '.docx');
+        
+        // Command untuk convert DOCX ke PDF
+        $cmd = sprintf(
+            'libreoffice --headless --convert-to pdf --outdir %s %s 2>&1',
+            escapeshellarg($outputDir),
+            escapeshellarg($docxPath)
+        );
+
+        exec($cmd, $output, $returnCode);
+
+        $generatedPdf = $outputDir . '/' . $baseName . '.pdf';
+
+        if ($returnCode !== 0) {
+            throw new \Exception('LibreOffice conversion failed: ' . implode("\n", $output));
+        }
+
+        if (!file_exists($generatedPdf)) {
+            throw new \Exception('Generated PDF not found at: ' . $generatedPdf);
+        }
+
+        // Rename ke target path jika berbeda
+        if ($generatedPdf !== $pdfPath) {
+            if (file_exists($pdfPath)) {
+                unlink($pdfPath);
+            }
+            rename($generatedPdf, $pdfPath);
+        }
+
+        return $pdfPath;
+    }
+
+    /**
+     * Convert menggunakan DomPDF (fallback)
+     * LESS IDEAL: Mungkin rusak header/footer tapi lebih compatible
+     */
+    private function convertUsingDomPDF($docxPath, $pdfPath)
+    {
+        try {
+            \PhpOffice\PhpWord\Settings::setPdfRendererPath(base_path('vendor/dompdf/dompdf'));
+            \PhpOffice\PhpWord\Settings::setPdfRendererName('DomPDF');
+
+            $phpWord = \PhpOffice\PhpWord\IOFactory::load($docxPath);
+            $pdfWriter = \PhpOffice\PhpWord\IOFactory::createWriter($phpWord, 'PDF');
+            $pdfWriter->save($pdfPath);
+
+            if (!file_exists($pdfPath)) {
+                throw new \Exception('PDF file was not created');
             }
 
-            if (str_contains($name, 'word/document.xml')) {
-                $content = $this->normalizeTemplatePlaceholders($content);
-            }
+            return $pdfPath;
 
-            $target->addFromString($name, $content);
+        } catch (\Exception $e) {
+            throw new \Exception('DomPDF conversion failed: ' . $e->getMessage());
         }
-
-        $source->close();
-        $target->close();
-
-        return $tempPath;
     }
 
     private function setTemplateAliases($template, $details)
