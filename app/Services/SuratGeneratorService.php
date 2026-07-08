@@ -9,6 +9,7 @@ use App\Models\SuratPanitia;
 use App\Models\JenisSurat;
 use PhpOffice\PhpWord\TemplateProcessor;
 use Carbon\Carbon;
+use ZipArchive;
 
 class SuratGeneratorService
 {
@@ -38,7 +39,8 @@ class SuratGeneratorService
             throw new \Exception("Template tidak ditemukan: " . $templatePath);
         }
 
-        $template = new TemplateProcessor($templatePath);
+        $normalizedTemplatePath = $this->normalizeTemplateDocument($templatePath);
+        $template = new TemplateProcessor($normalizedTemplatePath);
 
         /*
         |-----------------------------------------
@@ -48,6 +50,8 @@ class SuratGeneratorService
         foreach ($details as $key => $value) {
             $template->setValue($key, $value);
         }
+
+        $this->setTemplateAliases($template, $details);
 
         /*
         |-----------------------------------------
@@ -65,22 +69,43 @@ class SuratGeneratorService
         $template->setValue('tahun', $tanggal->format('Y'));
 
         // Signatory details
-        $template->setValue('penandatangan_nama', $jenis->penandatangan_nama ?? '-');
-        $template->setValue('penandatangan_nip', $jenis->penandatangan_nip ?? '-');
-        $template->setValue('penandatangan_jabatan', $jenis->penandatangan_jabatan ?? '-');
+        $penandatanganNama = $jenis->penandatangan_nama ?? '-';
+        $penandatanganNip = $jenis->penandatangan_nip ?? '-';
+        $penandatanganJabatan = $jenis->penandatangan_jabatan ?? '-';
+
+        $template->setValue('penandatangan_nama', $penandatanganNama);
+        $template->setValue('nama_penandatangan', $penandatanganNama);
+        $template->setValue('penandatangan_nip', $penandatanganNip);
+        $template->setValue('penandatangan_jabatan', $penandatanganJabatan);
+        $template->setValue('jabatan_penandatangan', $penandatanganJabatan);
 
         /*
         |-----------------------------------------
         | 3. HANDLE TABLE (REPEATER)
         |-----------------------------------------
         */
-        $list = "";
+        $listAnggota = "";
 
         foreach ($anggota as $i => $row) {
-            $list .= ($i + 1) . ". " . $row->nama . " - " . $row->identitas . "\n";
+            $listAnggota .= ($i + 1) . ". " . $row->nama . " - " . $row->identitas . "\n";
         }
 
-        $template->setValue('list_anggota', $list);
+        $template->setValue('list_anggota', $listAnggota);
+
+        $listPanitia = "";
+
+        foreach ($panitia as $i => $row) {
+            $jabatan = $row->jabatan ?? '-';
+            $nama = $row->nama ?? '-';
+            $identitas = $row->identitas ?? '-';
+            $listPanitia .= ($i + 1) . ". " . $jabatan . ", " . $nama . ", " . $identitas . "\n";
+        }
+
+        $template->setValue('list_panitia', $listPanitia);
+        $template->setValue('panitia_list', $listPanitia);
+
+        $this->setPanitiaPlaceholders($template, $panitia);
+        $this->applyPanitiaTableRows($normalizedTemplatePath, $panitia);
 
         /*
         |-----------------------------------------
@@ -111,7 +136,149 @@ class SuratGeneratorService
         $master->update([
             'file_hasil' => $pdfPath
         ]);
+
+        @unlink($normalizedTemplatePath);
+
         return $pdfPath;
+    }
+
+    private function normalizeTemplateDocument($templatePath)
+    {
+        $tempPath = tempnam(sys_get_temp_dir(), 'surat_tpl_');
+        @unlink($tempPath);
+        $tempPath .= '.docx';
+
+        $source = new ZipArchive();
+        $target = new ZipArchive();
+
+        if ($source->open($templatePath) !== true) {
+            throw new \Exception('Gagal membuka template DOCX: ' . $templatePath);
+        }
+
+        if ($target->open($tempPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
+            $source->close();
+            throw new \Exception('Gagal membuat salinan template DOCX sementara.');
+        }
+
+        for ($i = 0; $i < $source->numFiles; $i++) {
+            $name = $source->getNameIndex($i);
+            $content = $source->getFromName($name);
+
+            if ($content === false) {
+                continue;
+            }
+
+            if (str_contains($name, 'word/document.xml')) {
+                $content = $this->normalizeTemplatePlaceholders($content);
+            }
+
+            $target->addFromString($name, $content);
+        }
+
+        $source->close();
+        $target->close();
+
+        return $tempPath;
+    }
+
+    private function setTemplateAliases($template, $details)
+    {
+        $aliases = [
+            'skema_abdimas' => 'skema_abdimas',
+            'periode' => 'periode',
+            'nama_kegiatan' => 'nama_kegiatan',
+            'penyelenggara' => 'penyelenggara',
+            'list_panitia' => 'list_panitia',
+        ];
+
+        foreach ($aliases as $alias => $fallbackKey) {
+            if (!isset($details[$alias]) && isset($details[$fallbackKey])) {
+                $template->setValue($alias, $details[$fallbackKey]);
+            }
+        }
+    }
+
+    private function setPanitiaPlaceholders($template, $panitia)
+    {
+        if ($panitia->isEmpty()) {
+            $template->setValue('jabatan', '-');
+            $template->setValue('nama', '-');
+            $template->setValue('identitas', '-');
+            return;
+        }
+
+        $row = $panitia->first();
+
+        $template->setValue('jabatan', $row->jabatan ?? '-');
+        $template->setValue('nama', $row->nama ?? '-');
+        $template->setValue('identitas', $row->identitas ?? '-');
+    }
+
+    private function applyPanitiaTableRows($templatePath, $panitia)
+    {
+        if ($panitia->isEmpty()) {
+            return;
+        }
+
+        $zip = new ZipArchive();
+        if ($zip->open($templatePath) !== true) {
+            return;
+        }
+
+        $documentXml = $zip->getFromName('word/document.xml');
+        if ($documentXml === false) {
+            $zip->close();
+            return;
+        }
+
+        $rowXml = $this->extractTableRowXml($documentXml);
+        if ($rowXml === null) {
+            $zip->close();
+            return;
+        }
+
+        $rowsXml = '';
+        foreach ($panitia as $index => $row) {
+            $renderedRow = str_replace('${jabatan}', htmlspecialchars($row->jabatan ?? '-', ENT_XML1), $rowXml);
+            $renderedRow = str_replace('${nama}', htmlspecialchars($row->nama ?? '-', ENT_XML1), $renderedRow);
+            $renderedRow = str_replace('${identitas}', htmlspecialchars($row->identitas ?? '-', ENT_XML1), $renderedRow);
+            $rowsXml .= $renderedRow;
+        }
+
+        $documentXml = preg_replace('/<w:tbl>.*?<w:tr[^>]*>.*?<w:t>\$\{jabatan\}<\/w:t>.*?<\/w:tr>.*?<\/w:tbl>/s', '<w:tbl>' . $rowsXml . '</w:tbl>', $documentXml, 1);
+
+        $zip->addFromString('word/document.xml', $documentXml);
+        $zip->close();
+    }
+
+    private function extractTableRowXml($documentXml)
+    {
+        if (preg_match('/<w:tbl>(.*?)<w:tr([^>]*)>(.*?)<\/w:tr>(.*?)<\/w:tbl>/s', $documentXml, $matches)) {
+            return $matches[0];
+        }
+
+        return null;
+    }
+
+    private function normalizeTemplatePlaceholders($content)
+    {
+        $content = preg_replace_callback('/\{\{([A-Za-z0-9_]+)\}\}/', function ($matches) {
+            return '${' . $matches[1] . '}';
+        }, $content);
+
+        $content = preg_replace_callback('/\[\[([A-Za-z0-9_]+)\]\]/', function ($matches) {
+            return '${' . $matches[1] . '}';
+        }, $content);
+
+        $content = preg_replace_callback('/\$\{(?:<[^>]+>|<\/[^>]+>)*([A-Za-z0-9_]+)(?:<[^>]+>|<\/[^>]+>)*\}/', function ($matches) {
+            return '${' . $matches[1] . '}';
+        }, $content);
+
+        $content = preg_replace_callback('/\$([A-Za-z0-9_]+)/', function ($matches) {
+            return '${' . $matches[1] . '}';
+        }, $content);
+
+        return $content;
     }
 
     private function generateNomorSurat($master, $tanggal)

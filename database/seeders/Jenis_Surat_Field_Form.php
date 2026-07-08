@@ -109,11 +109,19 @@ class Jenis_Surat_Field_Form extends Seeder
             ],
             [
                 'jenis_surat_id' => $surat['PENGABDIAN']->id,
+                'field_name' => 'skema_abdimas',
+                'field_type' => 'text',
+                'is_required' => 1,
+                'options' => null,
+                'urutan' => 2,
+            ],
+            [
+                'jenis_surat_id' => $surat['PENGABDIAN']->id,
                 'field_name' => 'lokasi_pelaksanaan',
                 'field_type' => 'textarea',
                 'is_required' => 1,
                 'options' => null,
-                'urutan' => 2,
+                'urutan' => 3,
             ],
             [
                 'jenis_surat_id' => $surat['PENGABDIAN']->id,
@@ -157,11 +165,19 @@ class Jenis_Surat_Field_Form extends Seeder
             ],
             [
                 'jenis_surat_id' => $surat['PENGEMBANGAN_DIRI']->id,
+                'field_name' => 'periode',
+                'field_type' => 'text',
+                'is_required' => 1,
+                'options' => null,
+                'urutan' => 2,
+            ],
+            [
+                'jenis_surat_id' => $surat['PENGEMBANGAN_DIRI']->id,
                 'field_name' => 'lokasi',
                 'field_type' => 'textarea',
                 'is_required' => 1,
                 'options' => null,
-                'urutan' => 2,
+                'urutan' => 3,
             ],
             [
                 'jenis_surat_id' => $surat['PENGEMBANGAN_DIRI']->id,
@@ -169,7 +185,7 @@ class Jenis_Surat_Field_Form extends Seeder
                 'field_type' => 'list_anggota',
                 'is_required' => 1,
                 'options' => null,
-                'urutan' => 3,
+                'urutan' => 4,
             ],
         ]);
 
