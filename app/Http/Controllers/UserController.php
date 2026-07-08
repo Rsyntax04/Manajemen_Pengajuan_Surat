@@ -427,6 +427,28 @@ public function updatePengajuan(Request $request, $id)
     return redirect()->route('user.history')->with('success', 'Pengajuan berhasil diubah');
 }
 
+/**
+ * View PDF dengan mode side-by-side menggunakan PDF.js
+ */
+public function viewPdf($id)
+{
+    $pengajuan = SuratMaster::with('jenisSurat')
+        ->where('user_id', Auth::id())
+        ->findOrFail($id);
+
+    if ($pengajuan->status != 'approved') {
+        return redirect()->back()->with('error', 'Surat belum disetujui');
+    }
+
+    if (!$pengajuan->file_hasil || !file_exists($pengajuan->file_hasil)) {
+        return redirect()->back()->with('error', 'File surat tidak ditemukan');
+    }
+
+    // Buat URL untuk PDF viewer
+    $pdfPath = url('storage/' . str_replace(storage_path('app/public/'), '', $pengajuan->file_hasil));
+
+    return view('users.view-pdf', compact('pengajuan', 'pdfPath'));
+}
 
 public function downloadSurat($id)
 {
