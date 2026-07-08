@@ -127,13 +127,8 @@ class SuratGeneratorService
 
         $template->saveAs($docxPath);
 
-        // Convert DOCX to PDF using DomPDF via PhpWord
-        \PhpOffice\PhpWord\Settings::setPdfRendererPath(base_path('vendor/dompdf/dompdf'));
-        \PhpOffice\PhpWord\Settings::setPdfRendererName('DomPDF');
-        
-        $phpWord = \PhpOffice\PhpWord\IOFactory::load($docxPath);
-        $pdfWriter = \PhpOffice\PhpWord\IOFactory::createWriter($phpWord, 'PDF');
-        $pdfWriter->save($pdfPath);
+        // Convert DOCX to PDF using LibreOffice (more reliable for headers/footers)
+        $this->convertDocxToPdfLibreOffice($docxPath, $pdfPath);
 
         $master->update([
             'file_hasil' => $pdfPath
@@ -142,6 +137,64 @@ class SuratGeneratorService
         @unlink($normalizedTemplatePath);
 
         return $pdfPath;
+    }
+
+    /**
+     * Convert DOCX to PDF using LibreOffice
+     * This method preserves headers, footers, and complex formatting better than DomPDF
+     */
+    private function convertDocxToPdfLibreOffice($docxPath, $pdfPath)
+    {
+        // Try LibreOffice first
+        if ($this->hasLibreOffice()) {
+            return $this->convertWithLibreOffice($docxPath, $pdfPath);
+        }
+
+        // Fallback to DomPDF if LibreOffice not available
+        \PhpOffice\PhpWord\Settings::setPdfRendererPath(base_path('vendor/dompdf/dompdf'));
+        \PhpOffice\PhpWord\Settings::setPdfRendererName('DomPDF');
+        
+        $phpWord = \PhpOffice\PhpWord\IOFactory::load($docxPath);
+        $pdfWriter = \PhpOffice\PhpWord\IOFactory::createWriter($phpWord, 'PDF');
+        $pdfWriter->save($pdfPath);
+    }
+
+    /**
+     * Check if LibreOffice is installed
+     */
+    private function hasLibreOffice()
+    {
+        $output = shell_exec('which libreoffice 2>/dev/null');
+        return !empty($output);
+    }
+
+    /**
+     * Convert DOCX to PDF using LibreOffice command line
+     */
+    private function convertWithLibreOffice($docxPath, $pdfPath)
+    {
+        $outputDir = dirname($pdfPath);
+        $baseName = basename($docxPath, '.docx');
+        
+        // Command to convert DOCX to PDF
+        $cmd = sprintf(
+            'libreoffice --headless --convert-to pdf --outdir %s %s 2>&1',
+            escapeshellarg($outputDir),
+            escapeshellarg($docxPath)
+        );
+
+        exec($cmd, $output, $returnCode);
+
+        $generatedPdf = $outputDir . '/' . $baseName . '.pdf';
+
+        if ($returnCode !== 0 || !file_exists($generatedPdf)) {
+            throw new \Exception('Gagal mengkonversi DOCX ke PDF dengan LibreOffice. Error: ' . implode("\n", $output));
+        }
+
+        // Rename if needed
+        if ($generatedPdf !== $pdfPath) {
+            rename($generatedPdf, $pdfPath);
+        }
     }
 
     private function normalizeTemplateDocument($templatePath)
