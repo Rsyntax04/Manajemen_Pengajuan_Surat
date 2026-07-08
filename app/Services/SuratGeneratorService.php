@@ -40,6 +40,9 @@ class SuratGeneratorService
         }
 
         $normalizedTemplatePath = $this->normalizeTemplateDocument($templatePath);
+
+        $this->applyPanitiaTableRows($normalizedTemplatePath, $panitia);
+
         $template = new TemplateProcessor($normalizedTemplatePath);
 
         /*
@@ -105,7 +108,6 @@ class SuratGeneratorService
         $template->setValue('panitia_list', $listPanitia);
 
         $this->setPanitiaPlaceholders($template, $panitia);
-        $this->applyPanitiaTableRows($normalizedTemplatePath, $panitia);
 
         /*
         |-----------------------------------------
@@ -231,21 +233,67 @@ class SuratGeneratorService
             return;
         }
 
-        $rowXml = $this->extractTableRowXml($documentXml);
-        if ($rowXml === null) {
+        // Ekstrak SEMUA baris dari tabel
+        if (!preg_match('/<w:tbl>(.*?)<\/w:tbl>/s', $documentXml, $tableMatch)) {
             $zip->close();
             return;
         }
 
-        $rowsXml = '';
-        foreach ($panitia as $index => $row) {
-            $renderedRow = str_replace('${jabatan}', htmlspecialchars($row->jabatan ?? '-', ENT_XML1), $rowXml);
-            $renderedRow = str_replace('${nama}', htmlspecialchars($row->nama ?? '-', ENT_XML1), $renderedRow);
-            $renderedRow = str_replace('${identitas}', htmlspecialchars($row->identitas ?? '-', ENT_XML1), $renderedRow);
-            $rowsXml .= $renderedRow;
+        $tableContent = $tableMatch[1];
+        
+        // Ekstrak semua rows
+        if (!preg_match_all('/<w:tr(.*?)<\/w:tr>/s', $tableContent, $rowMatches)) {
+            $zip->close();
+            return;
         }
 
-        $documentXml = preg_replace('/<w:tbl>.*?<w:tr[^>]*>.*?<w:t>\$\{jabatan\}<\/w:t>.*?<\/w:tr>.*?<\/w:tbl>/s', '<w:tbl>' . $rowsXml . '</w:tbl>', $documentXml, 1);
+        $allRows = $rowMatches[0];
+        if (count($allRows) < 2) {
+            $zip->close();
+            return; // Minimal perlu header + data row
+        }
+
+        // Row kedua adalah template (yang berisi placeholder)
+        $templateRow = $allRows[1];
+        
+        // Cek apakah row kedua memang punya placeholder
+        if (strpos($templateRow, '${') === false) {
+            $zip->close();
+            return;
+        }
+
+        // Hapus row kedua (template placeholder) dari array
+        $headerRows = [$allRows[0]]; // Keep header
+        
+        // Duplikasi row kedua untuk setiap panitia
+        $dataRows = '';
+        foreach ($panitia as $row) {
+            $renderedRow = $templateRow;
+            
+            $renderedRow = preg_replace_callback('/\$\{\s*jabatan\s*\}/', function() use ($row) {
+                return htmlspecialchars($row->jabatan ?? '-', ENT_XML1);
+            }, $renderedRow);
+            
+            $renderedRow = preg_replace_callback('/\$\{\s*nama\s*\}/', function() use ($row) {
+                return htmlspecialchars($row->nama ?? '-', ENT_XML1);
+            }, $renderedRow);
+            
+            $renderedRow = preg_replace_callback('/\$\{\s*identitas\s*\}/', function() use ($row) {
+                return htmlspecialchars($row->identitas ?? '-', ENT_XML1);
+            }, $renderedRow);
+            
+            $dataRows .= $renderedRow;
+        }
+
+        // Reconstruct table: header + all data rows
+        $newTableContent = '';
+        foreach ($headerRows as $hRow) {
+            $newTableContent .= $hRow;
+        }
+        $newTableContent .= $dataRows;
+
+        $newTableXml = '<w:tbl>' . preg_replace('/<w:tbl>.*?<\/w:tbl>/s', '', $tableMatch[0], 1) . $newTableContent . '</w:tbl>';
+        $documentXml = preg_replace('/<w:tbl>.*?<\/w:tbl>/s', '<w:tbl>' . substr($tableMatch[1], 0, strpos($tableMatch[1], '<w:tr')) . $newTableContent . '</w:tbl>', $documentXml, 1);
 
         $zip->addFromString('word/document.xml', $documentXml);
         $zip->close();
@@ -254,7 +302,7 @@ class SuratGeneratorService
     private function extractTableRowXml($documentXml)
     {
         if (preg_match('/<w:tbl>(.*?)<w:tr([^>]*)>(.*?)<\/w:tr>(.*?)<\/w:tbl>/s', $documentXml, $matches)) {
-            return $matches[0];
+            return '<w:tr' . $matches[2] . '>' . $matches[3] . '</w:tr>';
         }
 
         return null;
