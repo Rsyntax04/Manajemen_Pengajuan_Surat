@@ -175,7 +175,16 @@
                                     Download
                                 </a>
                             </div>
-                        @elseif($item->status == 'pending' || $item->status == 'revisi')
+                        @elseif($item->status == 'revisi')
+                            <a href="{{ route('user.pengajuan.edit',$item->id) }}"
+                               class="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded-lg transition inline-block">
+                                Edit
+                            </a>
+                        @elseif($item->status == 'pending')
+                            <a href="{{ route('user.pengajuan.hapus',$item->id) }}"
+                               class="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded-lg transition inline-block">
+                                Hapus
+                            </a>
                             <a href="{{ route('user.pengajuan.edit',$item->id) }}"
                                class="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded-lg transition inline-block">
                                 Edit

@@ -80,7 +80,9 @@
                 <input type="file" name="template_file" accept=".doc,.docx" class="w-full border rounded-xl p-3"
                     required>
 
-
+                @error('template_file')
+                    <div class="text-red-500 text-sm mt-1">{{ $message }}</div>
+                @enderror
 
             </div>
 
@@ -89,14 +91,23 @@
                 <div>
                     <label class="font-semibold text-sm text-gray-700">Nama Penandatangan</label>
                     <input type="text" name="penandatangan_nama" class="w-full border rounded-xl p-3 mt-1" placeholder="Contoh: Dr. Ir. Budi Santoso, M.T.">
+                    @error('penandatangan_nama')
+                        <div class="text-red-500 text-sm mt-1">{{ $message }}</div>
+                    @enderror
                 </div>
                 <div>
                     <label class="font-semibold text-sm text-gray-700">NIP / NIK</label>
                     <input type="text" name="penandatangan_nip" class="w-full border rounded-xl p-3 mt-1" placeholder="Contoh: 198001012005011001">
+                    @error('penandatangan_nip')
+                        <div class="text-red-500 text-sm mt-1">{{ $message }}</div>
+                    @enderror
                 </div>
                 <div>
                     <label class="font-semibold text-sm text-gray-700">Jabatan</label>
                     <input type="text" name="penandatangan_jabatan" class="w-full border rounded-xl p-3 mt-1" placeholder="Contoh: Dekan / Ketua Program Studi">
+                    @error('penandatangan_jabatan')
+                        <div class="text-red-500 text-sm mt-1">{{ $message }}</div>
+                    @enderror
                 </div>
             </div>
 
@@ -115,7 +126,6 @@
                     Field Form
 
                 </h3>
-
 
 
 

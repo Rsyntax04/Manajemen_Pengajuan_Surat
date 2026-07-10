@@ -76,9 +76,6 @@
                         </th>
 
 
-                        <th class="px-6 py-4 text-left">
-                            Template
-                        </th>
 
 
                         <th class="px-6 py-4 text-left">
@@ -143,24 +140,7 @@
 
 
 
-                            <td class="px-6 py-4">
-
-
-                                @if ($item->template_file)
-                                    <a href="{{ asset('storage/' . $item->template_file) }}" target="_blank"
-                                        class="text-blue-600">
-
-
-                                        Lihat File
-
-
-                                    </a>
-                                @else
-                                    -
-                                @endif
-
-
-                            </td>
+                            
 
 
 

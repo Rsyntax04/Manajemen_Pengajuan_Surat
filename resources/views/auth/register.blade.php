@@ -83,7 +83,13 @@
                 placeholder="NIM / NIP"
                 class="w-full border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-slate-700">
 
+             @error('identitas')
 
+                <p class="text-red-600 text-sm mt-2">
+                    {{ $message }}
+                </p>
+
+            @enderror
         </div>
 
 

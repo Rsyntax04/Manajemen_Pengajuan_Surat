@@ -113,12 +113,12 @@ class AdminController extends Controller
 
     public function updateUser(Request $request, $id)
     {
-        $user = User::findOrFail($id);
-
+        
         $request->validate([
             'role_id' => 'required'
-        ]);
-
+            ]);
+            
+        $user = User::findOrFail($id);
         $user->role_id = $request->role_id;
         $user->is_active = $request->is_active ?? 1;
 
@@ -183,10 +183,14 @@ class AdminController extends Controller
     {
 
         $request->validate([
-            'nama_jenis'=>'required',
-            'kode_surat'=>'required',
-            'fields.*.field_name'=>'required',
-            'fields.*.field_type'=>'required'
+            'nama_jenis' => 'required',
+            'kode_surat' => 'required',
+            'file_template' => 'nullable|file|mimes:doc,docx,pdf',
+            'fields.*.field_name' => 'required',
+            'fields.*.field_type' => 'required',
+            'penandatangan_nama' => 'required',
+            'penandatangan_nip' => 'required',
+            'penandatangan_jabatan' => 'required',
         ]);
 
 
@@ -251,15 +255,29 @@ class AdminController extends Controller
 
     public function updateJenisSurat(Request $request,$id)
     {
-
+        $request->validate([
+            'nama_jenis' => 'required',
+            'kode_surat' => 'required',
+            'file_template' => 'nullable|file|mimes:docx',
+            'fields.*.field_name' => 'required',
+            'fields.*.field_type' => 'required',
+            'penandatangan_nama' => 'required',
+            'penandatangan_nip' => 'required',
+            'penandatangan_jabatan' => 'required',
+        ]);
 
         $jenisSurat = JenisSurat::findOrFail($id);
 
+        $file = $request->file('template_file');
+
+        $fileName = time() . '_' . $file->getClientOriginalName();
+        $file->storeAs('template', $fileName, 'public');
 
         $jenisSurat->update([
             'nama_jenis'=>$request->nama_jenis,
             'kode_surat'=>$request->kode_surat,
-            'template_file'=>$request->template_file,
+            'template_file'=>$fileName,
+            'active_template_file'=>$fileName,
             'template_html'=>$request->template_html,
             'template_json'=>$request->template_json,
             'penandatangan_nama' => $request->penandatangan_nama,
@@ -305,16 +323,10 @@ class AdminController extends Controller
     public function deleteJenisSurat($id)
     {
         try {
-
-            JenisSuratFieldForm::where(
-                'jenis_surat_id',
-                $id
-            )->delete();
-
-
-            JenisSurat::findOrFail($id)
-                ->delete();
-
+            DB::transaction(function () use ($id) {
+                JenisSuratFieldForm::where('jenis_surat_id', $id)->delete();
+                JenisSurat::findOrFail($id)->delete();
+            });
 
             ActivityLogController::store(
                 'Delete Jenis Surat',

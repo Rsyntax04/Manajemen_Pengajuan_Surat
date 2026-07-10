@@ -22,6 +22,7 @@ class UserController extends Controller
 
     public function history(Request $request)
     {
+        $jenisSurats = JenisSurat::all();
         $query = SuratMaster::with('jenisSurat')->where('user_id', Auth::id());
 
         if ($request->jenis_surat_id) {
@@ -35,7 +36,6 @@ class UserController extends Controller
             });
         }
 
-        $jenisSurats = JenisSurat::all();
         $pengajuan = $query->latest()->paginate(10)->withQueryString();
 
         return view('users.history', compact('pengajuan', 'jenisSurats'));
@@ -65,7 +65,7 @@ class UserController extends Controller
     {
         $request->validate([
             'name' => 'required',
-            'phone' => 'nullable'
+            'phone' => 'nullable|max:12'
         ]);
 
 
@@ -86,8 +86,8 @@ class UserController extends Controller
     public function pengajuan(Request $request)
     {
         $user = auth::user();
-
         $jenisSurat = JenisSurat::all();
+
 
         $selectedSurat = null;
         $fields = [];
@@ -160,17 +160,29 @@ class UserController extends Controller
                 $seenIdentitas = [];
 
                 foreach ($rows as $i => $row) {
+                    
                     if ($i === 0) continue;
                     if (!isset($row[0])) continue;
 
-                    $identitas = $row[1] ?? '';
-                    
+                    $identitas = trim($row[1] ?? '');
+
                     if (in_array($identitas, $seenIdentitas)) {
                         throw \Illuminate\Validation\ValidationException::withMessages([
-                            'fields.'.$field->id => 'Terdapat duplikasi NIM/NIDN '.$identitas.' pada file Excel.'
+                            'fields.'.$field->id =>
+                                'Baris '.($i + 1).': Terdapat duplikasi NIM/NIDN '.$identitas.' pada file Excel.'
                         ]);
                     }
                     $seenIdentitas[] = $identitas;
+
+                    // VALIDASI KE DATABASE
+                    $user = User::where('identitas', $identitas)->first();
+
+                    if (!$user) {
+                        throw \Illuminate\Validation\ValidationException::withMessages([
+                            'fields.'.$field->id =>
+                                'Baris '.($i + 1).': NIM/NIDN '.$identitas.' tidak terdaftar pada sistem.'
+                        ]);
+                    }
 
                     $data[] = [
                         'surat_id' => $suratId,
@@ -430,12 +442,73 @@ public function updatePengajuan(Request $request, $id)
                     );
             }
         }
-        HistoryPengajuanService::create($pengajuan->id, Auth::id(), 'Updated');
     });
 
     return redirect()->route('user.history')->with('success', 'Pengajuan berhasil diubah');
 }
 
+public function deletePengajuan($id)
+{
+    $pengajuan = SuratMaster::where('user_id', Auth::id())
+        ->findOrFail($id);
+
+    // Hanya boleh menghapus pending atau revisi
+    if (!in_array($pengajuan->status, ['pending', 'revisi'])) {
+        return redirect()
+            ->route('user.history')
+            ->with('error', 'Pengajuan tidak dapat dihapus.');
+    }
+
+    DB::transaction(function () use ($pengajuan) {
+
+        // Hapus file excel jika ada
+        $files = DB::table('surat_file')
+            ->where('surat_id', $pengajuan->id)
+            ->get();
+
+        foreach ($files as $file) {
+            if ($file->path_file && Storage::exists($file->path_file)) {
+                Storage::delete($file->path_file);
+            }
+        }
+
+        // Hapus file hasil surat jika ada
+        if ($pengajuan->file_hasil) {
+
+            $path = str_replace(storage_path('app/public/'), '', $pengajuan->file_hasil);
+
+            if (Storage::disk('public')->exists($path)) {
+                Storage::disk('public')->delete($path);
+            }
+        }
+
+        DB::table('history_pengajuan')
+            ->where('surat_id', $pengajuan->id)
+            ->delete();
+
+        DB::table('surat_detail')
+            ->where('surat_id', $pengajuan->id)
+            ->delete();
+
+        DB::table('surat_anggota')
+            ->where('surat_id', $pengajuan->id)
+            ->delete();
+
+        DB::table('surat_panitia')
+            ->where('surat_id', $pengajuan->id)
+            ->delete();
+
+        DB::table('surat_file')
+            ->where('surat_id', $pengajuan->id)
+            ->delete();
+
+        $pengajuan->delete();
+    });
+
+    return redirect()
+        ->route('user.history')
+        ->with('success', 'Pengajuan berhasil dihapus.');
+}
 /**
  * View PDF dengan mode side-by-side menggunakan PDF.js
  */
@@ -444,14 +517,6 @@ public function viewPdf($id)
     $pengajuan = SuratMaster::with('jenisSurat')
         ->where('user_id', Auth::id())
         ->findOrFail($id);
-
-    if ($pengajuan->status != 'approved') {
-        return redirect()->back()->with('error', 'Surat belum disetujui');
-    }
-
-    if (!$pengajuan->file_hasil || !file_exists($pengajuan->file_hasil)) {
-        return redirect()->back()->with('error', 'File surat tidak ditemukan');
-    }
 
     // Buat URL untuk PDF viewer
     $pdfPath = url('storage/' . str_replace(storage_path('app/public/'), '', $pengajuan->file_hasil));

@@ -22,6 +22,7 @@ class MoController extends Controller
 
     public function history(Request $request)
     {
+        $jenisSurats = JenisSurat::all();
         $query = SuratMaster::with([
             'user',
             'jenisSurat'
@@ -46,7 +47,6 @@ class MoController extends Controller
             });
         }
 
-        $jenisSurats = JenisSurat::all();
 
         $pengajuan = $query
             ->latest()
@@ -63,9 +63,10 @@ class MoController extends Controller
         $pengajuan = SuratMaster::with(['user', 'jenisSurat', 'details', 'anggota', 'panitia'])->findOrFail($id);
         return view('mo.show', compact('pengajuan'));
     }
-
+    
     public function approvalpage(Request $request)
     {
+        $jenisSurats = JenisSurat::all();
         $query = SuratMaster::with(['user', 'jenisSurat'])
             ->where('status', 'pending');
 
@@ -80,7 +81,6 @@ class MoController extends Controller
             });
         }
 
-        $jenisSurats = JenisSurat::all();
 
         $pengajuan = $query->latest()->paginate(10)->withQueryString();
 
@@ -94,6 +94,7 @@ class MoController extends Controller
             'status' => 'approved',
             'approved_at' => now(),
             'approved_by' => Auth::id(),
+            'catatan_revisi' => null
         ]);
 
 
@@ -130,7 +131,7 @@ class MoController extends Controller
             'catatan_revisi' => $request->catatan_revisi
         ]);
 
-        $pesan = 'Pengajuan surat Anda dikembalikan untuk revisi. Catatan: ' . $request->catatan_revisi;
+        $pesan = 'Pengajuan surat Anda Ditolak. Catatan: ' . $request->catatan_revisi;
         
         $jenis_surat = JenisSurat::find($data->jenis_surat_id)->nama_jenis;
         Mail::to($data->user->email)
@@ -148,7 +149,7 @@ class MoController extends Controller
             'status' => 'revisi',
             'catatan_revisi' => $request->catatan_revisi
         ]);
-         $pesan = 'Pengajuan surat Anda ditolak. Catatan: ' . $request->catatan_revisi;
+         $pesan = 'Pengajuan surat Anda Dikembalikan Untuk Revisi. Catatan: ' . $request->catatan_revisi;
 
         $jenis_surat = JenisSurat::find($data->jenis_surat_id)->nama_jenis;
         Mail::to($data->user->email)
@@ -169,7 +170,7 @@ class MoController extends Controller
     {
         $request->validate([
             'jenis_surat_id' => 'required|exists:jenis_surat,id',
-            'template_file' => 'required|mimes:docx'
+            'template_file' => 'required|mimes:docx|extensions:docx'
         ]);
 
         $jenis = JenisSurat::findOrFail($request->jenis_surat_id);

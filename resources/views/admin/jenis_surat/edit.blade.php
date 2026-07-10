@@ -56,7 +56,9 @@
                     <input name="nama_jenis" value="{{ $jenisSurat->nama_jenis }}" class="w-full border rounded-xl p-3"
                         required>
 
-
+                    @error('nama_jenis')
+                        <div class="text-red-500 text-sm mt-1">{{ $message }}</div>
+                    @enderror
 
                 </div>
 
@@ -79,7 +81,9 @@
                     <input name="kode_surat" value="{{ $jenisSurat->kode_surat }}" class="w-full border rounded-xl p-3"
                         required>
 
-
+                    @error('kode_surat')
+                        <div class="text-red-500 text-sm mt-1">{{ $message }}</div>
+                    @enderror
 
                 </div>
 
@@ -126,7 +130,9 @@
 
                 <input type="file" name="template_file" accept=".doc,.docx" class="w-full border rounded-xl p-3">
 
-
+                @error('template_file')
+                    <div class="text-red-500 text-sm mt-1">{{ $message }}</div>
+                @enderror
 
             </div>
 
@@ -135,14 +141,23 @@
                 <div>
                     <label class="font-semibold text-sm text-gray-700">Nama Penandatangan</label>
                     <input type="text" name="penandatangan_nama" value="{{ $jenisSurat->penandatangan_nama }}" class="w-full border rounded-xl p-3 mt-1" placeholder="Contoh: Dr. Ir. Budi Santoso, M.T.">
+                    @error('penandatangan_nama')
+                        <div class="text-red-500 text-sm mt-1">{{ $message }}</div>
+                    @enderror
                 </div>
                 <div>
                     <label class="font-semibold text-sm text-gray-700">NIP / NIK</label>
                     <input type="text" name="penandatangan_nip" value="{{ $jenisSurat->penandatangan_nip }}" class="w-full border rounded-xl p-3 mt-1" placeholder="Contoh: 198001012005011001">
+                    @error('penandatangan_nip')
+                        <div class="text-red-500 text-sm mt-1">{{ $message }}</div>
+                    @enderror
                 </div>
                 <div>
                     <label class="font-semibold text-sm text-gray-700">Jabatan</label>
                     <input type="text" name="penandatangan_jabatan" value="{{ $jenisSurat->penandatangan_jabatan }}" class="w-full border rounded-xl p-3 mt-1" placeholder="Contoh: Dekan / Ketua Program Studi">
+                    @error('penandatangan_jabatan')
+                        <div class="text-red-500 text-sm mt-1">{{ $message }}</div>
+                    @enderror
                 </div>
             </div>
 

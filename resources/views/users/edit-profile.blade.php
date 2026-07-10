@@ -64,7 +64,11 @@
                     name="phone"
                     value="{{ old('phone',$user->phone) }}"
                     class="w-full border rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500">
-
+                @error('phone')
+                <p class="text-red-600 text-sm mt-1">
+                    {{ $message }}
+                </p>
+                @enderror
             </div>
 
 

@@ -102,5 +102,6 @@ Route::middleware('auth')->group(function () {
             Route::put('/user/profile/update', [UserController::class, 'updateProfile'])->name('user.profile.update');
             Route::get('/user/pengajuan/{id}/view', [UserController::class, 'viewPdf'])->name('user.pengajuan.view');
             Route::get('/user/pengajuan/{id}/download', [UserController::class, 'downloadSurat'])->name('user.pengajuan.download');
+            Route::get('/user/pengajuan/{id}/hapus', [UserController::class, 'deletePengajuan'])->name('user.pengajuan.hapus');
         });
 });

@@ -51,7 +51,9 @@
         </button>
 
     </form>
-
+    @error('template_file')
+        <div class="text-red-500 text-sm mt-1">{{ $message }}</div>
+    @enderror
 </div>
 
 @endsection
